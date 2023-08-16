@@ -1,5 +1,5 @@
 import { Entity, ManyToOne } from "@mikro-orm/core";
-import { BasePictureEntity, type PictureSizeType } from "./BasePictureEntity";
+import { BasePictureEntity } from "./BasePictureEntity";
 import { TrackCommentEntity } from "./TrackCommentEntity";
 
 @Entity({discriminatorValue: 'track_comment'})
@@ -11,12 +11,9 @@ export class TrackCommentPictureEntity extends BasePictureEntity {
                eager: true})
     comment!: TrackCommentEntity;
 
-    constructor(size_type: PictureSizeType, 
-                width: number, 
-                height: number, 
-                path_name: string) {
+    constructor() {
 
-        super(size_type, width, height, path_name);
+        super();
         this.type = 'track_comment';
     }
 }

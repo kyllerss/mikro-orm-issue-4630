@@ -1,5 +1,5 @@
 import { Entity, ManyToOne } from "@mikro-orm/core";
-import { BasePictureEntity, type PictureSizeType } from "./BasePictureEntity";
+import { BasePictureEntity } from "./BasePictureEntity";
 import { PoolCommentEntity } from "./PoolCommentEntity";
 
 @Entity({discriminatorValue: 'pool_comment'})
@@ -11,12 +11,9 @@ export class PoolCommentPictureEntity extends BasePictureEntity {
                eager: false})
     comment!: PoolCommentEntity;
 
-    constructor(size_type: PictureSizeType, 
-                width: number, 
-                height: number, 
-                path_name: string) {
+    constructor() {
 
-        super(size_type, width, height, path_name);
+        super();
         this.type = 'pool_comment';
     }
 }
