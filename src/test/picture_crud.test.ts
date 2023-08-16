@@ -1,33 +1,120 @@
-import { MikroORM, RequestContext } from '@mikro-orm/core';
-import {describe, expect, it} from 'vitest';
-import { BaseUUIDEntity } from '../entities/BaseUUIDEntity';
-import { BaseCommentEntity } from '../entities/BaseCommentEntity';
-import { TrackCommentEntity } from '../entities/TrackCommentEntity';
-import { PoolCommentEntity } from '../entities/PoolCommentEntity';
-import { BasePictureEntity } from '../entities/BasePictureEntity';
-import { TrackCommentPictureEntity } from '../entities/TrackCommentPictureEntity';
-import { PoolCommentPictureEntity } from '../entities/PoolCommentPictureEntity';
-import type { EntityManager, PostgreSqlDriver } from '@mikro-orm/postgresql';
+import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import type { PostgreSqlDriver } from '@mikro-orm/postgresql';
+import { MikroORM, Entity, Enum, PrimaryKey, ManyToOne, Collection, LoadStrategy, OneToMany } from "@mikro-orm/core";
 
-async function get_by_uuids(uuids: string[]): Promise<{[uuid:string]: BaseCommentEntity}> {
+@Entity({
+    tableName: 'comments',
+    discriminatorColumn: 'type',
+    abstract: true,
+  })
+abstract class BaseCommentEntity {
 
-    if (uuids.length == 0) {
-        return {};
-    }
+    @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+    uuid!: string;
 
-    const em: EntityManager = RequestContext.getEntityManager() as EntityManager;
-    let results = await em.find(BaseCommentEntity, uuids, { populate: true });
-    
-    let to_return: {[uuid: string]: BaseCommentEntity} = {};
-    for (let result of results) {
-        to_return[result.uuid] = result;
-        console.log("Loaded from database: ", result.type, result.uuid, result.pictures.length);
-    }
+    @Enum({type: 'varchar', nullable: false})
+    type!: 'track' | 'pool'; 
 
-    return to_return;
+    abstract pictures: any;
 }
 
-describe("Comment", async () => {
+@Entity({
+    tableName: 'pictures',
+    discriminatorColumn: 'type',
+    abstract: true,
+  })
+abstract class BasePictureEntity {
+
+    @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+    uuid!: string;
+
+    @Enum({type: 'varchar', nullable: false})
+    type!: 'track_comment' | 'pool_comment'; 
+}
+
+@Entity({discriminatorValue: 'pool'})
+class PoolCommentEntity extends BaseCommentEntity {
+
+    @OneToMany({entity: () => PoolCommentPictureEntity, 
+        mappedBy: 'comment', 
+        orphanRemoval: true, 
+        eager: true, 
+        strategy: LoadStrategy.JOINED})
+    pictures: Collection<PoolCommentPictureEntity>;
+
+    constructor(pictures: any[] = []) {
+
+        super();
+        this.type = 'pool';
+
+        this.pictures = new Collection<PoolCommentPictureEntity>(this);
+
+        for (let picture of pictures) {
+
+            let picture_entity = new PoolCommentPictureEntity();
+            this.pictures.add(picture_entity);
+        }
+    }
+}
+
+@Entity({discriminatorValue: 'pool_comment'})
+class PoolCommentPictureEntity extends BasePictureEntity {
+
+    @ManyToOne({fieldName: 'comment_uuid', 
+               entity: () => PoolCommentEntity, 
+               nullable: false, 
+               eager: false})
+    comment!: PoolCommentEntity;
+
+    constructor() {
+
+        super();
+        this.type = 'pool_comment';
+    }
+}
+
+@Entity({discriminatorValue: 'track'})
+class TrackCommentEntity extends BaseCommentEntity {
+
+    @OneToMany({entity: () => TrackCommentPictureEntity, 
+        mappedBy: 'comment', 
+        orphanRemoval: true, 
+        eager: true, 
+        strategy: LoadStrategy.JOINED})
+    pictures: Collection<TrackCommentPictureEntity>;
+
+    constructor(pictures: any[] = []) {
+                    
+        super();
+        this.type = 'track';
+
+        this.pictures = new Collection<TrackCommentPictureEntity>(this);
+
+        for (let picture of pictures) {
+
+            let picture_entity = new TrackCommentPictureEntity();
+            this.pictures.add(picture_entity);
+        }
+    }
+}
+
+@Entity({discriminatorValue: 'track_comment'})
+class TrackCommentPictureEntity extends BasePictureEntity {
+
+    @ManyToOne({fieldName: 'comment_uuid', 
+               entity: () => TrackCommentEntity, 
+               nullable: false, 
+               eager: true})
+    comment!: TrackCommentEntity;
+
+    constructor() {
+
+        super();
+        this.type = 'track_comment';
+    }
+}
+
+describe("Issue 4630", async () => {
 
     const DB_URL = process.env.TEST_DATABASE_URL;
 
@@ -36,64 +123,65 @@ describe("Comment", async () => {
         throw new Error("TEST_DATABASE_URL is missing.");
     }
     
-    const orm = await MikroORM.init<PostgreSqlDriver>({
-        entities: [
-            BaseUUIDEntity,
-            BaseCommentEntity, TrackCommentEntity, PoolCommentEntity,
-            BasePictureEntity, TrackCommentPictureEntity, PoolCommentPictureEntity
-        ],
-        type: "postgresql",
-        clientUrl: DB_URL,
-        forceUndefined: true,
-        debug: true,
-        pool: {min: 2, max: 5}, 
-        driverOptions: {
-            connection: {
-                ssl: false
-            }
-        },
-        discovery: { disableDynamicFileAccess: true }
+    let orm: MikroORM<PostgreSqlDriver>;
+
+    beforeAll(async () => {
+        orm = await MikroORM.init<PostgreSqlDriver>({
+            entities: [
+                BaseCommentEntity, TrackCommentEntity, PoolCommentEntity,
+                BasePictureEntity, TrackCommentPictureEntity, PoolCommentPictureEntity
+            ],
+            type: "postgresql",
+            clientUrl: DB_URL,
+            forceUndefined: true,
+            debug: true,
+            pool: {min: 2, max: 5}, 
+            driverOptions: {
+                connection: {
+                    ssl: false
+                }
+            },
+            discovery: { disableDynamicFileAccess: true },
+            allowGlobalContext: true
+        });
     });
     
-    it("performs create/read operations", async () => {
+    afterAll(() => orm.close(true)); 
+
+    it("doesn't load track comment pictures", async () => {
 
         let entity_manager = orm.em;
 
-        let track_comment_1: TrackCommentEntity;
-        let pool_comment_1: PoolCommentEntity;
-
         // create data
-        await RequestContext.createAsync(entity_manager, async () => {
+        let tc1_pictures = [{}, {}];
 
-            let tc1_pictures = [{}, {}];
+        let track_comment_1: TrackCommentEntity = new TrackCommentEntity(tc1_pictures);
+        await entity_manager.persistAndFlush(track_comment_1);
 
-            track_comment_1 = new TrackCommentEntity(tc1_pictures);
-            await RequestContext.getEntityManager()!.persistAndFlush(track_comment_1);
+        let pc1_pictures = [{}, {}];
+        
+        let pool_comment_1: PoolCommentEntity = new PoolCommentEntity(pc1_pictures);
+        await entity_manager.persistAndFlush(pool_comment_1);
 
-            let pc1_pictures = [{}, {}];
-            
-            pool_comment_1 = new PoolCommentEntity(pc1_pictures);
-            await RequestContext.getEntityManager()!.persistAndFlush(pool_comment_1);
-        });
+        entity_manager.clear(); // force reading from DB
 
-        // load using abstract parent
-        await RequestContext.createAsync(entity_manager, async () => {
-            
-            let comments = await get_by_uuids(
-                [
-                    track_comment_1.uuid,
-                    pool_comment_1.uuid
-                ]
-            );
+        // load using abstract parent            
+        let uuids = [ track_comment_1.uuid, pool_comment_1.uuid ];
+        let results = await entity_manager.find(BaseCommentEntity, uuids, { populate: true });
+        
+        let comments: {[uuid: string]: BaseCommentEntity} = {};
+        for (let result of results) {
+            comments[result.uuid] = result;
+            console.log("Loaded from database: ", result.type, result.uuid, result.pictures.length);
+        }
 
-            let pc = comments[pool_comment_1.uuid];
-            expect(pc.pictures).toBeDefined();
-            expect(pc.pictures.length).toBe(2);
+        let pc = comments[pool_comment_1.uuid];
+        expect(pc.pictures).toBeDefined();
+        expect(pc.pictures.length).toBe(2);
 
-            let tc = comments[track_comment_1.uuid];
-            expect(tc.pictures).toBeDefined();
-            expect(tc.pictures.length).toBe(2);
-        });
+        let tc = comments[track_comment_1.uuid];
+        expect(tc.pictures).toBeDefined();
+        expect(tc.pictures.length).toBe(2);
     });
 });
 
