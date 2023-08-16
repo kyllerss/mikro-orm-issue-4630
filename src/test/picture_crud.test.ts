@@ -1,5 +1,6 @@
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
-import type { PostgreSqlDriver } from '@mikro-orm/postgresql';
+import { SqliteDriver } from '@mikro-orm/sqlite';
+import crypto from 'crypto';
 import { MikroORM, Entity, Enum, PrimaryKey, ManyToOne, Collection, LoadStrategy, OneToMany } from "@mikro-orm/core";
 
 @Entity({
@@ -9,8 +10,8 @@ import { MikroORM, Entity, Enum, PrimaryKey, ManyToOne, Collection, LoadStrategy
   })
 abstract class BaseCommentEntity {
 
-    @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
-    uuid!: string;
+    @PrimaryKey({ type: 'uuid' })
+    uuid: string = crypto.randomUUID();
 
     @Enum({type: 'varchar', nullable: false})
     type!: 'track' | 'pool'; 
@@ -25,8 +26,8 @@ abstract class BaseCommentEntity {
   })
 abstract class BasePictureEntity {
 
-    @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
-    uuid!: string;
+    @PrimaryKey({ type: 'uuid' })
+    uuid: string = crypto.randomUUID();
 
     @Enum({type: 'varchar', nullable: false})
     type!: 'track_comment' | 'pool_comment'; 
@@ -116,39 +117,25 @@ class TrackCommentPictureEntity extends BasePictureEntity {
 
 describe("Issue 4630", async () => {
 
-    const DB_URL = process.env.TEST_DATABASE_URL;
-
-    if (!DB_URL) {
-        console.error("Must define env variable TEST_DATABASE_URL in the form: 'postgres://<username>:<password>@<host>:<port>>/<database_name>?sslmode=disable'");
-        throw new Error("TEST_DATABASE_URL is missing.");
-    }
-    
-    let orm: MikroORM<PostgreSqlDriver>;
+    let orm: MikroORM<SqliteDriver>;
 
     beforeAll(async () => {
-        orm = await MikroORM.init<PostgreSqlDriver>({
+
+        orm = await MikroORM.init({
             entities: [
                 BaseCommentEntity, TrackCommentEntity, PoolCommentEntity,
                 BasePictureEntity, TrackCommentPictureEntity, PoolCommentPictureEntity
             ],
-            type: "postgresql",
-            clientUrl: DB_URL,
-            forceUndefined: true,
-            debug: true,
-            pool: {min: 2, max: 5}, 
-            driverOptions: {
-                connection: {
-                    ssl: false
-                }
-            },
-            discovery: { disableDynamicFileAccess: true },
+            dbName: ':memory:',
+            driver: SqliteDriver,
             allowGlobalContext: true
         });
+        await orm.schema.createSchema();
     });
     
     afterAll(() => orm.close(true)); 
 
-    it("doesn't load track comment pictures", async () => {
+    it("should load pool and track comment pictures", async () => {
 
         let entity_manager = orm.em;
 

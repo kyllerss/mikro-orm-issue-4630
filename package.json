@@ -8,11 +8,9 @@
 	},
 	"dependencies": {
 		"@mikro-orm/core": "^5.7.14",
-		"@mikro-orm/postgresql": "^5.7.14",
-		"pg": "^8.11.2"
+		"@mikro-orm/sqlite": "^5.7.14"
 	},
 	"devDependencies": {
-		"dbmate": "^2.5.0",
 		"typescript": "^5.0.0",
 		"vitest": "^0.34.0"
 	},
