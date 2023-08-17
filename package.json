@@ -3,8 +3,7 @@
 	"version": "0.0.1",
 	"private": true,
 	"scripts": {
-		"test": "vitest run",
-		"db-setup": "npx dbmate -u $TEST_DATABASE_URL drop && npx dbmate -u $TEST_DATABASE_URL --no-dump-schema --wait up"
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@mikro-orm/core": "^5.7.14",
